@@ -1,4 +1,0 @@
-# ninja log v6
-3	113	7957686240597273	CMakeFiles/test_tensor.dir/tests/test_tensor.c.obj	be282a799d6539fc
-8	177	7957686240644648	CMakeFiles/test_tensor.dir/src/tensor.c.obj	af0f1c32c142df31
-178	366	7957686242348659	test_tensor.exe	7de2a7302e9f7754

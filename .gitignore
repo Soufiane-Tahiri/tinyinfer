@@ -31,3 +31,8 @@ Thumbs.db
 *.key
 private/
 secrets/
+cmake-build-default/
+cmake-build-debug/
+.idea/
+*.exe
+*.o

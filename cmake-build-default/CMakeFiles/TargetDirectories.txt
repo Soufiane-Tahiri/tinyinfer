@@ -1,4 +1,0 @@
-C:/Users/PC/Desktop/Projetcs/Personnal/tinyinfer/cmake-build-default/CMakeFiles/tinyinfer.dir
-C:/Users/PC/Desktop/Projetcs/Personnal/tinyinfer/cmake-build-default/CMakeFiles/test_tensor.dir
-C:/Users/PC/Desktop/Projetcs/Personnal/tinyinfer/cmake-build-default/CMakeFiles/edit_cache.dir
-C:/Users/PC/Desktop/Projetcs/Personnal/tinyinfer/cmake-build-default/CMakeFiles/rebuild_cache.dir
