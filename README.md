@@ -63,7 +63,7 @@ tinyinfer/
 - Hard SRAM budget: fits inside ESP32's 520KB with room for FreeRTOS overhead
 
 ### Tensor representation
-- `float32` only in v0.1 — INT8 quantization is a later phase
+- `float32` and `int8` supported — dtype is a first-class field
 - Stride-based indexing
 - No autograd — inference only
 
