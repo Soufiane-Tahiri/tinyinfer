@@ -3,7 +3,7 @@
 #include "../include/tensor.h"
 int main() {
     ti_tensor_t tensor;
-    uint32_t shape[4] = {2, 3, 4, 5};
+    uint32_t shape[4] __attribute__((aligned(4))) = {2, 3, 4, 5};
     uint8_t ndim = 4;
 
 if (ti_tensor_create(&tensor, shape, ndim, TI_FLOAT32) != 0) {        printf("Failed to create tensor\n");
