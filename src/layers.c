@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdint.h>
+#include <limits.h>
 #include <string.h>
 #include "../include/layers.h"
 
@@ -8,11 +9,61 @@
  */
 #define TI_TILE_SIZE_INPUTS 8
 #define TI_TILE_SIZE_OUTPUTS 4
+#define TI_DENSE_MAX_DIM 65535U
+
+static int ti_checked_mul_u32(uint32_t a, uint32_t b, uint32_t *out) {
+    if (out == NULL) return -1;
+    if (a != 0U && b > (UINT32_MAX / a)) return -1;
+    *out = a * b;
+    return 0;
+}
+
+int ti_dense_validate_config(uint32_t input_size, uint32_t output_size) {
+    uint32_t weights_count = 0;
+    if (input_size == 0U || output_size == 0U) return -1;
+    if (input_size > TI_DENSE_MAX_DIM || output_size > TI_DENSE_MAX_DIM) return -1;
+    if (ti_checked_mul_u32(input_size, output_size, &weights_count) != 0) return -1;
+    return 0;
+}
+
+int ti_dense_validate_serialized_buffers(
+    uint32_t input_size,
+    uint32_t output_size,
+    uint32_t weights_len_bytes,
+    uint32_t bias_len_bytes,
+    ti_dtype_t dtype
+) {
+    uint32_t weights_count = 0;
+    uint32_t expected_weights_len = 0;
+    uint32_t expected_bias_len = 0;
+    uint32_t weight_elem_size = 0;
+    uint32_t bias_elem_size = 0;
+
+    if (ti_dense_validate_config(input_size, output_size) != 0) return -1;
+    if (ti_checked_mul_u32(input_size, output_size, &weights_count) != 0) return -1;
+
+    if (dtype == TI_FLOAT32) {
+        weight_elem_size = (uint32_t)sizeof(float);
+        bias_elem_size = (uint32_t)sizeof(float);
+    } else if (dtype == TI_INT8) {
+        weight_elem_size = (uint32_t)sizeof(int8_t);
+        bias_elem_size = (uint32_t)sizeof(int32_t);
+    } else {
+        return -1;
+    }
+
+    if (ti_checked_mul_u32(weights_count, weight_elem_size, &expected_weights_len) != 0) return -1;
+    if (ti_checked_mul_u32(output_size, bias_elem_size, &expected_bias_len) != 0) return -1;
+
+    if (weights_len_bytes != expected_weights_len || bias_len_bytes != expected_bias_len) return -1;
+    return 0;
+}
 
 
 int ti_dense_forward_float32(const ti_layer_t *layer, const ti_tensor_t *input, ti_tensor_t *output) {
     if (layer == NULL || input == NULL || output == NULL) return -1;
     if (layer->weights == NULL || layer->bias == NULL) return -1;
+    if (ti_dense_validate_config(layer->input_size, layer->output_size) != 0) return -1;
     if (input->ndim != 2 || input->shape[1] != layer->input_size) return -1;
     if (output->ndim != 2 || output->shape[0] != input->shape[0] || output->shape[1] != layer->output_size) return -1;
 
@@ -106,6 +157,7 @@ int ti_dense_forward_float32(const ti_layer_t *layer, const ti_tensor_t *input, 
 int ti_dense_forward_int8(const ti_layer_t *layer, const ti_tensor_t *input, ti_tensor_t *output) {
     if (layer == NULL || input == NULL || output == NULL) return -1;
     if (layer->weights == NULL || layer->bias == NULL) return -1;
+    if (ti_dense_validate_config(layer->input_size, layer->output_size) != 0) return -1;
     if (input->ndim != 2 || input->shape[1] != layer->input_size) return -1;
     if (output->ndim != 2 || output->shape[0] != input->shape[0] || output->shape[1] != layer->output_size) return -1;
 

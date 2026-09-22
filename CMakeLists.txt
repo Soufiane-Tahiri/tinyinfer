@@ -34,6 +34,6 @@ add_executable(tinyinfer main.c src/tensor.c src/layers.c src/activations.c)
 add_executable(test_tensor tests/test_tensor.c src/tensor.c)
 add_executable(test_layer tests/test_layer.c src/tensor.c src/layers.c)
 add_executable(test_layer_int8 tests/test_layer_int8.c src/tensor.c src/layers.c)
+add_executable(test_layer_validation tests/test_layer_validation.c src/tensor.c src/layers.c)
 add_executable(test_activations tests/test_activations.c src/tensor.c src/activations.c)
-
 
