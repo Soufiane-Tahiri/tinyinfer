@@ -4,310 +4,238 @@
 #include "../include/tensor.h"
 #include "../include/activations.h"
 
-#define EPSILON 1e-5f
-#define INT8_EPSILON 2
+#define EPSILON     1e-5f
+#define SOFTMAX_SCRATCH_SIZE 64
 
-int close_enough_float(float got, float expected) {
-    float diff = fabs(got - expected);
+static int close_enough(float got, float expected) {
+    float diff = fabsf(got - expected);
     if (diff < EPSILON) return 1;
-    float rel_error = diff / (fabs(expected) + EPSILON);
-    return rel_error < 0.01f;
+    return (diff / (fabsf(expected) + EPSILON)) < 0.01f;
 }
 
-int close_enough_int8(int8_t got, int8_t expected) {
-    return (got >= expected - INT8_EPSILON) && (got <= expected + INT8_EPSILON);
-}
+static int test_relu_float32(void) {
+    printf("  [relu-f32] basic: ");
 
-int test_relu_float32() {
-    printf("\n=== TEST: ReLU Float32 ===\n");
-
-    ti_tensor_t input, output;
+    ti_tensor_t in, out;
     uint32_t shape[4] = {1, 5, 0, 0};
+    ti_tensor_create(&in,  shape, 2, TI_FLOAT32);
+    ti_tensor_create(&out, shape, 2, TI_FLOAT32);
 
-    ti_tensor_create(&input, shape, 2, TI_FLOAT32);
-    ti_tensor_create(&output, shape, 2, TI_FLOAT32);
+    float *x = (float *)in.data;
+    float *y = (float *)out.data;
 
-    float *x = (float *)input.data;
-    float *y = (float *)output.data;
-
-
-    x[0] = -2.0f;
-    x[1] = -0.5f;
-    x[2] = 0.0f;
-    x[3] = 1.5f;
-    x[4] = 3.0f;
-
-    int result = ti_relu_forward(&input, &output);
-    if (result != 0) {
-        printf("FAIL: ti_relu_forward returned %d\n", result);
-        return 0;
-    }
-
+    x[0] = -2.0f; x[1] = -0.5f; x[2] = 0.0f; x[3] = 1.5f; x[4] = 3.0f;
     float expected[5] = {0.0f, 0.0f, 0.0f, 1.5f, 3.0f};
 
-    printf("Input:    [");
-    for (int i = 0; i < 5; i++) printf("%.2f ", x[i]);
-    printf("]\n");
-
-    printf("Output:   [");
-    for (int i = 0; i < 5; i++) printf("%.2f ", y[i]);
-    printf("]\n");
-
-    printf("Expected: [");
-    for (int i = 0; i < 5; i++) printf("%.2f ", expected[i]);
-    printf("]\n");
+    if (ti_relu_forward(&in, &out) != 0) { puts("FAIL: returned error"); return 0; }
 
     int pass = 1;
     for (int i = 0; i < 5; i++) {
-        if (!close_enough_float(y[i], expected[i])) {
-            printf("FAIL at index %d: got %.6f, expected %.6f\n", i, y[i], expected[i]);
+        if (!close_enough(y[i], expected[i])) {
+            printf("FAIL at [%d]: got %.4f expected %.4f\n", i, y[i], expected[i]);
             pass = 0;
         }
     }
 
-    ti_tensor_free(&input);
-    ti_tensor_free(&output);
-
-    if (pass) printf("PASS\n");
+    ti_tensor_free(&in); ti_tensor_free(&out);
+    if (pass) puts("PASS");
     return pass;
 }
 
-int test_relu_int8() {
-    printf("\n=== TEST: ReLU Int8 ===\n");
+static int test_relu_float32_null(void) {
+    printf("  [relu-f32] null input rejected: ");
+    if (ti_relu_forward(NULL, NULL) != -1) { puts("FAIL"); return 0; }
+    puts("PASS"); return 1;
+}
 
-    ti_tensor_t input, output;
+static int test_relu_float32_dtype_mismatch(void) {
+    printf("  [relu-f32] dtype mismatch rejected: ");
+
+    ti_tensor_t in, out;
+    uint32_t shape[4] = {1, 4, 0, 0};
+    ti_tensor_create(&in,  shape, 2, TI_FLOAT32);
+    ti_tensor_create(&out, shape, 2, TI_INT8);
+
+    int result = ti_relu_forward(&in, &out);
+    ti_tensor_free(&in); ti_tensor_free(&out);
+
+    if (result != -1) { puts("FAIL: accepted mismatched dtypes"); return 0; }
+    puts("PASS"); return 1;
+}
+
+static int test_relu_int8(void) {
+    printf("  [relu-i8]  basic: ");
+
+    ti_tensor_t in, out;
     uint32_t shape[4] = {1, 5, 0, 0};
+    ti_tensor_create(&in,  shape, 2, TI_INT8);
+    ti_tensor_create(&out, shape, 2, TI_INT8);
 
-    ti_tensor_create(&input, shape, 2, TI_INT8);
-    ti_tensor_create(&output, shape, 2, TI_INT8);
+    int8_t *x = (int8_t *)in.data;
+    int8_t *y = (int8_t *)out.data;
 
-    int8_t *x = (int8_t *)input.data;
-    int8_t *y = (int8_t *)output.data;
-
-    x[0] = -10;
-    x[1] = -1;
-    x[2] = 0;
-    x[3] = 5;
-    x[4] = 20;
-
-    int result = ti_relu_forward(&input, &output);
-    if (result != 0) {
-        printf("FAIL: ti_relu_forward returned %d\n", result);
-        return 0;
-    }
-
+    x[0] = -10; x[1] = -1; x[2] = 0; x[3] = 5; x[4] = 20;
     int8_t expected[5] = {0, 0, 0, 5, 20};
 
-    printf("Input:    [");
-    for (int i = 0; i < 5; i++) printf("%d ", x[i]);
-    printf("]\n");
-
-    printf("Output:   [");
-    for (int i = 0; i < 5; i++) printf("%d ", y[i]);
-    printf("]\n");
-
-    printf("Expected: [");
-    for (int i = 0; i < 5; i++) printf("%d ", expected[i]);
-    printf("]\n");
+    if (ti_relu_forward(&in, &out) != 0) { puts("FAIL: returned error"); return 0; }
 
     int pass = 1;
     for (int i = 0; i < 5; i++) {
         if (y[i] != expected[i]) {
-            printf("FAIL at index %d: got %d, expected %d\n", i, y[i], expected[i]);
+            printf("FAIL at [%d]: got %d expected %d\n", i, y[i], expected[i]);
             pass = 0;
         }
     }
 
-    ti_tensor_free(&input);
-    ti_tensor_free(&output);
-
-    if (pass) printf("PASS\n");
+    ti_tensor_free(&in); ti_tensor_free(&out);
+    if (pass) puts("PASS");
     return pass;
 }
 
-int test_softmax_float32() {
-    printf("\n=== TEST: Softmax Float32 ===\n");
+static int test_softmax_float32_basic(void) {
+    printf("  [smx-f32]  basic [1,2,3]: ");
 
-    ti_tensor_t input, output;
+    ti_tensor_t in, out;
     uint32_t shape[4] = {1, 3, 0, 0};
+    ti_tensor_create(&in,  shape, 2, TI_FLOAT32);
+    ti_tensor_create(&out, shape, 2, TI_FLOAT32);
 
-    ti_tensor_create(&input, shape, 2, TI_FLOAT32);
-    ti_tensor_create(&output, shape, 2, TI_FLOAT32);
+    float scratch[SOFTMAX_SCRATCH_SIZE];
+    float *x = (float *)in.data;
+    float *y = (float *)out.data;
 
-    float *x = (float *)input.data;
-    float *y = (float *)output.data;
+    x[0] = 1.0f; x[1] = 2.0f; x[2] = 3.0f;
 
-    x[0] = 1.0f;
-    x[1] = 2.0f;
-    x[2] = 3.0f;
-
-    int result = ti_softmax_forward(&input, &output);
-    if (result != 0) {
-        printf("FAIL: ti_softmax_forward returned %d\n", result);
-        return 0;
-    }
-
-    printf("Input:    [%.6f, %.6f, %.6f]\n", x[0], x[1], x[2]);
-    printf("Output:   [%.6f, %.6f, %.6f]\n", y[0], y[1], y[2]);
-
+    if (ti_softmax_forward(&in, &out, scratch) != 0) { puts("FAIL: returned error"); return 0; }
 
     float sum = y[0] + y[1] + y[2];
-    printf("Sum:      %.6f (should be ~1.0)\n", sum);
-
     int pass = 1;
 
     for (int i = 0; i < 3; i++) {
         if (y[i] < 0.0f || y[i] > 1.0f) {
-            printf("FAIL at index %d: value %.6f outside [0, 1]\n", i, y[i]);
+            printf("FAIL: y[%d]=%.6f outside [0,1]\n", i, y[i]);
             pass = 0;
         }
     }
-
-    if (!close_enough_float(sum, 1.0f)) {
-        printf("FAIL: sum %.6f not close to 1.0\n", sum);
-        pass = 0;
+    if (!close_enough(sum, 1.0f)) {
+        printf("FAIL: sum=%.6f not ~1.0\n", sum); pass = 0;
     }
-
     if (!(y[2] > y[1] && y[1] > y[0])) {
-        printf("FAIL: ordering wrong. Expected y[2] > y[1] > y[0]\n");
-        pass = 0;
+        puts("FAIL: ordering wrong, expected y[2]>y[1]>y[0]"); pass = 0;
     }
 
-    ti_tensor_free(&input);
-    ti_tensor_free(&output);
-
-    if (pass) printf("PASS\n");
+    ti_tensor_free(&in); ti_tensor_free(&out);
+    if (pass) puts("PASS");
     return pass;
 }
 
-int test_softmax_int8() {
-    printf("\n=== TEST: Softmax Int8 ===\n");
+static int test_softmax_float32_stability(void) {
+    printf("  [smx-f32]  large values (log-sum-exp stability): ");
 
-    ti_tensor_t input, output;
+    ti_tensor_t in, out;
     uint32_t shape[4] = {1, 3, 0, 0};
+    ti_tensor_create(&in,  shape, 2, TI_FLOAT32);
+    ti_tensor_create(&out, shape, 2, TI_FLOAT32);
 
-    ti_tensor_create(&input, shape, 2, TI_INT8);
-    ti_tensor_create(&output, shape, 2, TI_INT8);
+    float scratch[SOFTMAX_SCRATCH_SIZE];
+    float *x = (float *)in.data;
+    float *y = (float *)out.data;
 
-    int8_t *x = (int8_t *)input.data;
-    int8_t *y = (int8_t *)output.data;
+    x[0] = 1000.0f; x[1] = 1001.0f; x[2] = 999.0f;
 
-    x[0] = 1;
-    x[1] = 2;
-    x[2] = 3;
+    if (ti_softmax_forward(&in, &out, scratch) != 0) { puts("FAIL: returned error"); return 0; }
 
-    int result = ti_softmax_forward(&input, &output);
-    if (result != 0) {
-        printf("FAIL: ti_softmax_forward returned %d\n", result);
-        return 0;
+    int pass = 1;
+    for (int i = 0; i < 3; i++) {
+        if (isnan(y[i]) || isinf(y[i])) {
+            printf("FAIL: y[%d] is NaN or Inf\n", i); pass = 0;
+        }
+    }
+    float sum = y[0] + y[1] + y[2];
+    if (!close_enough(sum, 1.0f)) {
+        printf("FAIL: sum=%.6f\n", sum); pass = 0;
     }
 
-    printf("Input:    [%d, %d, %d]\n", x[0], x[1], x[2]);
-    printf("Output:   [%d, %d, %d] (quantized to [0, 127])\n", y[0], y[1], y[2]);
+    ti_tensor_free(&in); ti_tensor_free(&out);
+    if (pass) puts("PASS");
+    return pass;
+}
+
+static int test_softmax_float32_null_scratch(void) {
+    printf("  [smx-f32]  NULL scratch rejected: ");
+
+    ti_tensor_t in, out;
+    uint32_t shape[4] = {1, 3, 0, 0};
+    ti_tensor_create(&in,  shape, 2, TI_FLOAT32);
+    ti_tensor_create(&out, shape, 2, TI_FLOAT32);
+
+    int result = ti_softmax_forward(&in, &out, NULL);
+    ti_tensor_free(&in); ti_tensor_free(&out);
+
+    if (result != -1) { puts("FAIL: NULL scratch accepted"); return 0; }
+    puts("PASS"); return 1;
+}
+
+static int test_softmax_int8(void) {
+    printf("  [smx-i8]   basic [1,2,3]: ");
+
+    ti_tensor_t in, out;
+    uint32_t shape[4] = {1, 3, 0, 0};
+    ti_tensor_create(&in,  shape, 2, TI_INT8);
+    ti_tensor_create(&out, shape, 2, TI_INT8);
+
+    float scratch[SOFTMAX_SCRATCH_SIZE];
+    int8_t *x = (int8_t *)in.data;
+    int8_t *y = (int8_t *)out.data;
+
+    x[0] = 1; x[1] = 2; x[2] = 3;
+
+    if (ti_softmax_forward(&in, &out, scratch) != 0) { puts("FAIL: returned error"); return 0; }
+
+    int pass = 1;
+    for (int i = 0; i < 3; i++) {
+        int val = (int)y[i];
+        if (val < 0 || val > 127) {
+            printf("FAIL: y[%d]=%d outside [0,127]\n", i, val); pass = 0;
+        }
+    }
 
     float y0 = (float)y[0] / 127.0f;
     float y1 = (float)y[1] / 127.0f;
     float y2 = (float)y[2] / 127.0f;
-
-    printf("Dequant:  [%.6f, %.6f, %.6f]\n", y0, y1, y2);
-
     float sum = y0 + y1 + y2;
-    printf("Sum:      %.6f (should be ~1.0, allow ~2%% quant error)\n", sum);
-
-    int pass = 1;
-
-    for (int i = 0; i < 3; i++) {
-        if (y[i] < 0 || y[i] > 127) {
-            printf("FAIL at index %d: value %d outside [0, 127]\n", i, y[i]);
-            pass = 0;
-        }
-    }
 
     if (sum < 0.95f || sum > 1.05f) {
-        printf("FAIL: sum %.6f too far from 1.0 (quantization error?)\n", sum);
-        pass = 0;
+        printf("FAIL: dequant sum=%.4f outside [0.95,1.05]\n", sum); pass = 0;
     }
-
     if (!(y[2] > y[1] && y[1] > y[0])) {
-        printf("FAIL: ordering wrong. Expected y[2] > y[1] > y[0]\n");
-        pass = 0;
+        puts("FAIL: ordering wrong, expected y[2]>y[1]>y[0]"); pass = 0;
     }
 
-    ti_tensor_free(&input);
-    ti_tensor_free(&output);
-
-    if (pass) printf("PASS\n");
+    ti_tensor_free(&in); ti_tensor_free(&out);
+    if (pass) puts("PASS");
     return pass;
 }
 
-int test_softmax_float32_large_values() {
-    printf("\n=== TEST: Softmax Float32 (Large Values - Log-Sum-Exp Stability) ===\n");
-
-    ti_tensor_t input, output;
-    uint32_t shape[4] = {1, 3, 0, 0};
-
-    ti_tensor_create(&input, shape, 2, TI_FLOAT32);
-    ti_tensor_create(&output, shape, 2, TI_FLOAT32);
-
-    float *x = (float *)input.data;
-    float *y = (float *)output.data;
-
-    x[0] = 1000.0f;
-    x[1] = 1001.0f;
-    x[2] = 999.0f;
-
-    int result = ti_softmax_forward(&input, &output);
-    if (result != 0) {
-        printf("FAIL: ti_softmax_forward returned %d\n", result);
-        return 0;
-    }
-
-    printf("Input:    [%.0f, %.0f, %.0f] (large values)\n", x[0], x[1], x[2]);
-    printf("Output:   [%.6f, %.6f, %.6f]\n", y[0], y[1], y[2]);
-
-    float sum = y[0] + y[1] + y[2];
-    printf("Sum:      %.6f (should be ~1.0)\n", sum);
-
-    int pass = 1;
-
-    for (int i = 0; i < 3; i++) {
-        if (isnan(y[i]) || isinf(y[i])) {
-            printf("FAIL at index %d: got NaN or Inf\n", i);
-            pass = 0;
-        }
-    }
-
-    if (!close_enough_float(sum, 1.0f)) {
-        printf("FAIL: sum %.6f not close to 1.0\n", sum);
-        pass = 0;
-    }
-
-    ti_tensor_free(&input);
-    ti_tensor_free(&output);
-
-    if (pass) printf("PASS\n");
-    return pass;
-}
-
-int main() {
+int main(void) {
     printf("========================================\n");
-    printf("TINYINFER ACTIVATION LAYER TEST SUITE\n");
+    printf("TINYINFER ACTIVATION TEST SUITE\n");
     printf("========================================\n");
 
-    int passed = 0;
-    int total = 0;
+    int passed = 0, total = 0;
 
-    /* Run all tests */
-    total++; if (test_relu_float32()) passed++;
-    total++; if (test_relu_int8()) passed++;
-    total++; if (test_softmax_float32()) passed++;
-    total++; if (test_softmax_int8()) passed++;
-    total++; if (test_softmax_float32_large_values()) passed++;
+    total++; passed += test_relu_float32();
+    total++; passed += test_relu_float32_null();
+    total++; passed += test_relu_float32_dtype_mismatch();
+    total++; passed += test_relu_int8();
+    total++; passed += test_softmax_float32_basic();
+    total++; passed += test_softmax_float32_stability();
+    total++; passed += test_softmax_float32_null_scratch();
+    total++; passed += test_softmax_int8();
 
-    printf("\n========================================\n");
-    printf("RESULTS: %d / %d tests passed\n", passed, total);
+    printf("========================================\n");
+    printf("RESULTS: %d / %d passed\n", passed, total);
     printf("========================================\n");
 
     return (passed == total) ? 0 : 1;
 }
-
