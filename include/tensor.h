@@ -2,7 +2,6 @@
 #define TENSOR_H
 
 #include <stdint.h>
-
 #define TI_ALIGNED(n) __attribute__((aligned(n)))
 
 typedef enum {
