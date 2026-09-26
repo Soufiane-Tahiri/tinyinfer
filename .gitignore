@@ -35,4 +35,6 @@ cmake-build-default/
 cmake-build-debug/
 .idea/
 *.exe
-*.o
+*.o"tools/model_meta.json" 
+"tools/model_f32.bin" 
+"tools/model_int8.bin" 
