@@ -1,11 +1,11 @@
 #ifndef LAYERS_H
 #define LAYERS_H
+#define TI_MAX_LAYER_DIM        4096U
 #include "tensor.h"
 
 typedef enum {
     TI_ACT_NONE    = 0,
-    TI_ACT_RELU    = 1,
-    TI_ACT_SOFTMAX = 2,
+    TI_ACT_RELU    = 1
 } ti_activation_type_t;
 
 typedef struct TI_ALIGNED(4) {
@@ -16,7 +16,6 @@ typedef struct TI_ALIGNED(4) {
     ti_dtype_t dtype;
     ti_activation_type_t activation;
     float requant_scale;
-
 } ti_layer_t;
 
 int ti_dense_forward(const ti_layer_t *layer, ti_tensor_t *input, ti_tensor_t *output);
