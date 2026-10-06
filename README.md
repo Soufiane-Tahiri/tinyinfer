@@ -21,9 +21,9 @@ Primary target is an **ESP32 with 520KB SRAM**. If it fits and runs correctly th
 
 | Platform | RAM | Role |
 |---|---|---|
-| ESP32 | **520KB SRAM** |  Primary — everything is designed around this constraint |
-| Raspberry Pi 3B+ | ~512MB |  Secondary validation — numerical comparison against PyTorch |
-| x86 Linux | unlimited |  Development host |
+| ESP32 | **520KB SRAM** | Primary — everything is designed around this constraint |
+| Raspberry Pi 3B+ | ~512MB | Secondary validation — numerical comparison against PyTorch |
+| x86 Linux | unlimited | Development host |
 
 ESP32 first. Always. The Pi is for validation, not for setting the bar.
 
@@ -42,10 +42,10 @@ ESP32 first. Always. The Pi is for validation, not for setting the bar.
 To exercise the engine end-to-end, tinyinfer runs a small MLP trained on [NSL-KDD](https://www.unb.ca/cic/datasets/nsl.html), classifying network connections as normal or attack.
 
 - **Architecture:** 40 → 32 → 16 → 2, ~1.9K parameters (7.4 KB float32, 2.0 KB int8)
-- **Test accuracy:** ~0.88, recall ~0.86 (PyTorch reference, seed 42, 5% FPR budget threshold from grouped OOF). C-side validation pending loader completion.
+- **Test accuracy:** ~0.88, recall ~0.86 (PyTorch reference, seed 42, 5% FPR budget threshold from grouped OOF). C-side validation pending end-to-end run.
 - **Training + export:** `tiny_mlp/nsl-kdd-tinyinfer.ipynb` → `tiny_mlp/tinyinfer_weights.npz` + `tiny_mlp/tinyinfer_meta.json` → `tools/export.py` → `model_f32.bin` / `model_int8.bin`
 
-**Honest limitation:** NSL-KDD's features are windowed traffic/host statistics computed over a connection, not something an ESP32 can extract from raw packets in real time. This demo proves the inference engine — correct output on pre-extracted feature vectors, on-device, in float32 and int8 — not a complete on-device intrusion detection pipeline. Feature extraction from live traffic is out of scope for now.
+**Honest limitation:** NSL-KDD features are windowed traffic/host statistics computed over a connection, not something an ESP32 can extract from raw packets in real time. This demo proves the inference engine — correct output on pre-extracted feature vectors, on-device, in float32 and int8 — not a complete on-device intrusion detection pipeline. Feature extraction from live traffic is out of scope for now.
 
 ---
 
@@ -53,74 +53,128 @@ To exercise the engine end-to-end, tinyinfer runs a small MLP trained on [NSL-KD
 
 ```
 tinyinfer/
-├── include/          # Public headers
-├── src/              # Implementation (tensor, layers, activations)
-├── tests/            # Numerical validation against PyTorch reference outputs
+├── include/
+│   ├── activations.h
+│   ├── inference.h
+│   ├── layers.h
+│   ├── model.h
+│   ├── tensor.h
+│   └── tinyinfer.h
+├── models/
+│   ├── model_f32.bin
+│   ├── model_int8.bin
+│   └── model_meta.json
+├── src/
+│   ├── activations.c
+│   ├── layers.c
+│   ├── model.c
+│   ├── tensor.c
+│   └── tinyinfer.c
+├── tests/
+│   ├── test_activations.c
+│   ├── test_layer.c
+│   ├── test_layer_int8.c
+│   └── test_tensor.c
+├── tiny_mlp/
+│   ├── nsl-kdd-tinyinfer.ipynb
+│   ├── tinyinfer_meta.json
+│   ├── tinyinfer_mlp.pth
+│   └── tinyinfer_weights.npz
 ├── tools/
-│   └── export.py     # PyTorch → tinyinfer binary weight exporter (float32 + int8)
-├── tiny_mlp/          # NSL-KDD demo model: notebook, weights, metadata
-├── main.c
+│   └── export.py
+├── .gitignore
 ├── CMakeLists.txt
 └── README.md
 ```
+### Two-engine design
+
+**Host engine** (`src/`) — used on x86 Linux and Raspberry Pi for development and validation.
+Supports batched inference, dynamic tensor shapes, and extensible layer types. Used to validate
+numerical correctness against PyTorch before targeting hardware.
+
+**ESP32 runtime** (`tinyinfer.c`) — the bare-metal production kernel.
+Loads the entire model binary into one contiguous buffer, points directly into it for weights and
+biases (zero per-layer allocation), processes one sample at a time. Compiles cleanly under ESP-IDF
+with no dependency on the host engine.
+
+Both engines consume the same binary format produced by `export.py`. For a given input, their
+outputs must match within float32 precision — that agreement is the validation proof.
 
 ---
 
 ## Core design decisions
 
 ### Memory model
-- Static allocation — no heap in the inference path, ever
-- Hard SRAM budget: fits inside ESP32's 520KB with room for FreeRTOS overhead
-- Planned, not yet implemented: compile-time weight buffer sizing via static
-  assertions, flash (SPIFFS) weight storage, ping-pong activation buffer reuse
-
-### Tensor representation
-- `float32` and `int8` supported — dtype is a first-class field
-- Stride-based indexing
-- No autograd — inference only
+- Single contiguous buffer load: entire model file read into RAM once, weight/bias pointers set directly into it — no per-layer allocation
+- Hard SRAM budget: model + activations + FreeRTOS overhead fits inside ESP32's 520KB
+- Planned for v0.2: static arena replacing `malloc`, SPIFFS weight loading from flash
 
 ### Weight format
-- Custom binary, little-endian throughout: magic bytes + version + dtype tag + layer count + input/output dims
-- **float32:** per layer — input/output dims, raw float32 weights, raw float32 bias
-- **int8:** per layer — input/output dims, a per-layer `requant_scale`, int8 weights, int32 bias (pre-quantized into the same integer domain as the weight/input product, so the kernel's `acc * requant_scale` lands directly in the next layer's int8 range)
-- `tools/export.py` converts a trained PyTorch model to both formats and self-checks each against saved reference outputs before writing them
-- A companion `model_meta.json` carries everything that isn't weights: feature order, preprocessing (log1p columns, protocol one-hot, standardization mean/scale, clip bound), and the decision threshold
+Custom binary, little-endian throughout:
+```
+Header (24 bytes):
+  [4B] magic "TINF"
+  [4B] version (1)
+  [4B] dtype (0=float32, 1=int8)
+  [4B] num_layers
+  [4B] in_dim
+  [4B] out_dim
+
+int8 header extension:
+  [4B] input_scale (float32)
+
+Per layer:
+  [4B] in_dim
+  [4B] out_dim
+  [1B] activation (0=none, 1=relu)
+  [3B] padding
+  --- int8 only ---
+  [4B] requant_scale (float32)
+  ---
+  [out_dim × in_dim × elem_size] weights (row-major)
+  [out_dim × bias_elem_size]     bias
+```
+
+`export.py` writes both formats and self-checks against saved reference logits before reporting success.
 
 ---
 
 ## Roadmap
 
 ### v0.1 — Host-validated MLP
-- [x] `Tensor` struct — aligned allocation, overflow-safe shape computation
-- [x] Linear layer forward pass (float32 + int8, fused ReLU)
-- [x] ReLU, Softmax (float32 + int8)
+- [x] Tensor struct — aligned allocation, overflow-safe shape computation
+- [x] Dense layer forward pass (float32 + int8, fused ReLU, tiled + unrolled)
 - [x] INT8 requantization in dense kernel (`requant_scale`, `lrintf` rounding)
 - [x] Overflow guard on shape parsing, layer dimension bounds checks
-- [x] export.py — writes float32 and int8 binary formats, self-checks against reference outputs
+- [x] ReLU activation (float32 + int8)
+- [x] export.py — float32 + int8 binary formats, self-check against reference outputs
 - [x] NSL-KDD training notebook — grouped CV, FPR-calibrated threshold, int8 simulation
-- [ ] Binary weight loader (C side — in progress)
-- [ ] main.c demo — load model, run forward pass, print result and latency
-- [ ] End-to-end numerical validation: C output matches PyTorch reference within tolerance
+- [x] ESP32 runtime (`tinyinfer.c`) — single-buffer loader, float32 + int8 inference kernels
+- [ ] main.c — load model, run forward pass, compare against PyTorch reference, print result + latency
+- [ ] End-to-end numerical validation: C output matches PyTorch reference within float32 tolerance
 
 ### v0.2 — ESP32 port
-- [ ] ESP-IDF port — fit MLP in 520KB SRAM
-- [ ] UART output for inference result logging
-- [ ] Example: real-time anomaly detection on ESP32
+- [ ] ESP-IDF port — compile and flash under ESP-IDF v5.x
+- [ ] UART output for inference result and latency logging
 - [ ] SPIFFS weight loading from flash
+- [ ] Static arena replacing `malloc` for zero heap fragmentation
 
-### v0.3 — Validation + expansion
-- [ ] Raspberry Pi validation — compare output vs PyTorch numerically
+### v0.3 — Expansion
+- [ ] Raspberry Pi numerical validation vs PyTorch
+- [ ] Latency benchmark vs TFLite Micro on same model and hardware
+- [ ] Conv2D layer (host engine first, then ESP32 runtime)
 - [ ] Sigmoid, Tanh
-- [ ] Conv2D
-- [ ] Ping-pong activation buffer reuse across layers
 
 ---
 
 ## Build
 
 ```bash
-# Development host
-make
+# Development host (x86 Linux)
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Debug
+cmake --build .
+./tinyinfer
 
 # ESP32 via ESP-IDF
 idf.py build
@@ -132,8 +186,9 @@ idf.py flash monitor
 ## Requirements
 
 - C99 compiler (gcc or clang)
+- CMake 3.16+
 - ESP-IDF v5.x for ESP32 target
-- Python 3.x + PyTorch for weight export only
+- Python 3.x + NumPy + PyTorch for weight export only
 
 ---
 
