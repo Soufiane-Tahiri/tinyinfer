@@ -1,6 +1,9 @@
 #ifndef MODEL_H
 #define MODEL_H
 
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
 #include "layers.h"
 
 typedef struct {
@@ -13,13 +16,8 @@ typedef struct {
 } ti_model_t;
 
 int ti_model_load(ti_model_t *model, const char *path);
-
-int ti_model_run(
-    const ti_model_t *model,
-    ti_tensor_t *input,
-    ti_tensor_t *output
-);
-
+int ti_model_run(const ti_model_t *model, ti_tensor_t *input, ti_tensor_t *output);
 void ti_model_free(ti_model_t *model);
+bool ti_load_model_int8_mem(const uint8_t *buf, size_t size, ti_model_t *model);
 
 #endif

@@ -232,10 +232,63 @@ void ti_free_model_f32(ti_model_f32_t *model){
   model->layers = NULL;
   model->raw_buffer = NULL;
 }
+
+bool ti_load_model_int8_mem(const uint8_t *buf, size_t size, ti_model_int8_t *model) {
+    if (!buf || !model || size < sizeof(ti_model_header_t) + sizeof(float)) {
+        return false;
+    }
+
+    model->raw_buffer = (uint8_t *)buf;
+
+    ti_model_header_t *header = (ti_model_header_t *)model->raw_buffer;
+    if (memcmp(header->magic, "TINF", 4) != 0 || header->version != TI_VERSION) {
+        model->raw_buffer = NULL;
+        return false;
+    }
+
+    model->header = *header;
+    model->layers = malloc(header->num_layers * sizeof(ti_layer_int8_t));
+    if (model->layers == NULL) {
+        model->raw_buffer = NULL;
+        return false;
+    }
+
+    uint8_t *ptr = model->raw_buffer + sizeof(ti_model_header_t);
+
+    model->input_scale = *(const float *)ptr;
+    ptr += sizeof(float);
+
+    for (int i = 0; i < header->num_layers; i++) {
+        int32_t in_dim  = *(const int32_t *)ptr; ptr += sizeof(int32_t);
+        int32_t out_dim = *(const int32_t *)ptr; ptr += sizeof(int32_t);
+        uint8_t act     = *(const uint8_t *)ptr; ptr += sizeof(uint8_t);
+        ptr += 3;
+
+        float requant_scale = *(const float *)ptr; ptr += sizeof(float);
+
+        model->layers[i].in_dim        = in_dim;
+        model->layers[i].out_dim       = out_dim;
+        model->layers[i].act           = act;
+        model->layers[i].requant_scale = requant_scale;
+
+        model->layers[i].weights = (const int8_t *)ptr;
+        ptr += in_dim * out_dim * sizeof(int8_t);
+
+        model->layers[i].biases = (const int32_t *)ptr;
+        ptr += out_dim * sizeof(int32_t);
+    }
+
+    return true;
+}
+
+
 void ti_free_model_int8(ti_model_int8_t *model) {
-    if (model->layers)     free(model->layers);
-    if (model->raw_buffer) free(model->raw_buffer);
-    model->layers = NULL;
+    if (model->layers) {
+        free(model->layers);
+        model->layers = NULL;
+    }
     model->raw_buffer = NULL;
 }
+
+
 

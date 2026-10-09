@@ -53,6 +53,7 @@ bool ti_load_model_int8(const char *filepath,ti_model_int8_t *model);
 void ti_run_f32(const ti_model_f32_t *model, const float *input, float *output);
 void ti_run_int8(const ti_model_int8_t *model, const float *input, float *output);
 
+bool ti_load_model_int8_mem(const uint8_t *buf, size_t size, ti_model_int8_t *model);
 
 void ti_free_model_f32(ti_model_f32_t *model);
 void ti_free_model_int8(ti_model_int8_t *model);

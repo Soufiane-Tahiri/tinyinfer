@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include "activations.h"
+#include <stddef.h>
 int ti_relu_forward_float32(const ti_tensor_t *input, ti_tensor_t *output) {
     if (input == NULL || output == NULL || input->data == NULL || output->data == NULL) return -1;
     if (input->dtype != TI_FLOAT32 || output->dtype != TI_FLOAT32) return -1;

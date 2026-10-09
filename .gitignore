@@ -38,3 +38,4 @@ cmake-build-debug/
 *.o"tools/model_meta.json" 
 "tools/model_f32.bin" 
 "tools/model_int8.bin" 
+"sdkconfig.esp32dev" 

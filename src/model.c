@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include <string.h>
 #include "model.h"
+#include "tinyinfer.h"
+#include <inttypes.h>
 
 #define TI_MAGIC   "TINF"
 #define TI_VERSION 1
@@ -33,12 +35,12 @@ int ti_model_load(ti_model_t *model, const char *path) {
       return -1;
     }
     if (version != TI_VERSION) {
-      printf("Version mismatch (%d != %d)\n", version, TI_VERSION);
+      printf("Version mismatch (%" PRId32 "!= %d)\n", version, TI_VERSION);
       fclose(f);
       return -1;
     }
     if (dtype_tag != TI_FLOAT32 && dtype_tag != TI_INT8) {
-      printf("Unknown dtype_tag (%d)\n", dtype_tag);
+      printf("Unknown dtype_tag (%" PRId32")\n", dtype_tag);
       fclose(f);
       return -1;
     }
@@ -50,12 +52,12 @@ int ti_model_load(ti_model_t *model, const char *path) {
         return -1;
       }
     }
-    else {
+ 	else {
       model->input_scale = 1.0f;
     }
 
     if (n_layers <= 0 || n_layers > 32) {
-      printf("Invalid n_layers (%d)\n", n_layers);
+      printf("Invalid n_layers (%" PRId32 ")\n", n_layers);
       fclose(f);
       return -1;
     }
@@ -68,7 +70,7 @@ int ti_model_load(ti_model_t *model, const char *path) {
     }
 
     if (input_dim <= 0 || input_dim > 4096) {
-      printf("Invalid input_dim (%d)\n", input_dim);
+      printf("Invalid input_dim (%" PRId32 ")\n", input_dim);
       fclose(f);
       return -1;
     }
@@ -104,14 +106,14 @@ int ti_model_load(ti_model_t *model, const char *path) {
 		if (fread((void*)model->layers[i].weights, sizeof(int8_t), weight_count, f) != (weight_count)) goto error;
         model->layers[i].bias = malloc(model->layers[i].output_size * sizeof(int32_t));
         if (model->layers[i].bias == NULL) goto error;
-		if (fread(model->layers[i].bias, sizeof(int32_t), model->layers[i].output_size, f) != model->layers[i].output_size) goto error;      }
+		if ((void *)fread(model->layers[i].bias, sizeof(int32_t), model->layers[i].output_size, f) != model->layers[i].output_size) goto error;      }
       if (dtype_tag == TI_FLOAT32) {
         model->layers[i].weights = (const void *)malloc(weight_count * sizeof(float));
         if (model->layers[i].weights == NULL) goto error;
         if (fread((void*)model->layers[i].weights, sizeof(float), weight_count, f)!= (weight_count)) goto error;
         model->layers[i].bias = malloc(model->layers[i].output_size * sizeof(float));
         if (model->layers[i].bias == NULL) goto error;
-        if (fread(model->layers[i].bias, sizeof(float), model->layers[i].output_size, f)!=model->layers[i].output_size) goto error;
+        if (fread((void *)model->layers[i].bias, sizeof(float), model->layers[i].output_size, f)!=model->layers[i].output_size) goto error;
       }
 
     }
@@ -122,14 +124,14 @@ int ti_model_load(ti_model_t *model, const char *path) {
     if (model->layers != NULL) {
       for (uint32_t j = 0; j < i; j++) {
         if (model->layers[j].weights != NULL) {
-          free(model->layers[j].weights);
+          free((void *)model->layers[j].weights);
         }
         if (model->layers[j].bias != NULL) {
-          free(model->layers[j].bias);
+          free((void *)model->layers[j].bias);
         }
       }
       if (model->layers[i].weights != NULL) free((void*)model->layers[i].weights);
-      if (model->layers[i].bias != NULL) free(model->layers[i].bias);
+      if (model->layers[i].bias != NULL) free((void *)model->layers[i].bias);
       free(model->layers);
       model->layers = NULL;
     }
