@@ -20,46 +20,58 @@ int ti_model_load(ti_model_t *model, const char *path) {
     int32_t n_layers;
     int32_t input_dim;
     int32_t output_dim;
-
-if (fread(magic, sizeof(char), 4, f) != 4) { fclose(f); return -1; }
-    if (fread(&version, sizeof(int32_t), 1, f) != 1) { fclose(f); return -1; }
-    if (fread(&dtype_tag, sizeof(int32_t), 1, f) != 1) { fclose(f); return -1; }
-    if (fread(&n_layers, sizeof(int32_t), 1, f) != 1) { fclose(f); return -1; }
-    if (fread(&input_dim, sizeof(int32_t), 1, f) != 1) { fclose(f); return -1; }
-    if (fread(&output_dim, sizeof(int32_t), 1, f) != 1) { fclose(f); return -1; }
+  if (fread(magic, sizeof(char), 4, f) != 4) { printf("Failed reading magic\n"); fclose(f); return -1; }
+  if (fread(&version, sizeof(int32_t), 1, f) != 1) { printf("Failed reading version\n"); fclose(f); return -1; }
+  if (fread(&dtype_tag, sizeof(int32_t), 1, f) != 1) { printf("Failed reading dtype_tag\n"); fclose(f); return -1; }
+    if (fread(&n_layers, sizeof(int32_t), 1, f) != 1) { printf("Failed reading n_layers\n"); fclose(f); return -1; }
+    if (fread(&input_dim, sizeof(int32_t), 1, f) != 1) { printf("Failed reading input_dim\n"); fclose(f); return -1; }
+    if (fread(&output_dim, sizeof(int32_t), 1, f) != 1) { printf("Failed reading output_dim\n"); fclose(f); return -1; }
 
     if (strncmp(magic, TI_MAGIC, 4) != 0) {
-    fclose(f);
-    return -1;
+      printf("Magic mismatch (%.4s != %s)\n", magic, TI_MAGIC);
+      fclose(f);
+      return -1;
     }
     if (version != TI_VERSION) {
+      printf("Version mismatch (%d != %d)\n", version, TI_VERSION);
       fclose(f);
       return -1;
     }
     if (dtype_tag != TI_FLOAT32 && dtype_tag != TI_INT8) {
+      printf("Unknown dtype_tag (%d)\n", dtype_tag);
       fclose(f);
       return -1;
     }
 
  	if (dtype_tag == TI_INT8) {
-      if (fread(&model->input_scale, sizeof(float), 1, f) != 1) { fclose(f); return -1; }
+      if (fread(&model->input_scale, sizeof(float), 1, f) != 1) {
+        printf("Failed reading input_scale for INT8\n");
+        fclose(f);
+        return -1;
+      }
     }
     else {
       model->input_scale = 1.0f;
     }
 
     if (n_layers <= 0 || n_layers > 32) {
+      printf("Invalid n_layers (%d)\n", n_layers);
       fclose(f);
       return -1;
     }
 
     model->layers = calloc(n_layers , sizeof(ti_layer_t));
     if (model->layers == NULL) {
+      printf("calloc failed for layers\n");
       fclose(f);
       return -1;
     }
 
-    if (input_dim <= 0 || input_dim > 4096) { fclose(f); return -1; }
+    if (input_dim <= 0 || input_dim > 4096) {
+      printf("Invalid input_dim (%d)\n", input_dim);
+      fclose(f);
+      return -1;
+    }
     if (output_dim <= 0 || output_dim > 4096) { fclose(f); return -1; }
 
     model->num_layers = n_layers;
