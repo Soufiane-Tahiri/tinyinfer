@@ -30,8 +30,16 @@ if(USE_ESP_DSP)
     add_compile_definitions(TI_USE_ESP_DSP=1)
 endif()
 
+add_executable(verify_engine
+        main.c
+        src/tinyinfer.c
+        src/tensor.c
+        src/layers.c
+        src/activations.c
+        src/model.c
+)
 
-add_executable(tinyinfer      main.c src/tensor.c src/layers.c src/activations.c)
+add_executable(tinyinfer_lib   main.c src/tensor.c src/layers.c src/activations.c)
 add_executable(test_tensor    tests/test_tensor.c src/tensor.c)
 add_executable(test_layer     tests/test_layer.c src/tensor.c src/layers.c)
 add_executable(test_layer_int8 tests/test_layer_int8.c src/tensor.c src/layers.c)
