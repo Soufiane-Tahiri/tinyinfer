@@ -6,13 +6,13 @@ import numpy as np
 MAGIC = b"TINF"
 VERSION = 1
 DTYPE_F32 = 0
-DTYPE_INT8 = 1
+DTYPE_INT8 = 2
 
 WEIGHTS_NPZ = "../tiny_mlp/tinyinfer_weights.npz"
 META_JSON = "../tiny_mlp/tinyinfer_meta.json"
-OUT_F32_BIN = "model_f32.bin"
-OUT_INT8_BIN = "model_int8.bin"
-OUT_META = "model_meta.json"
+OUT_F32_BIN = "../models/model_f32.bin"
+OUT_INT8_BIN = "../models/model_int8.bin"
+OUT_META = "../models/model_meta.json"
 
 E = "<"
 
@@ -231,6 +231,18 @@ def main():
     print("f32 self-check: %s (max abs err %.2e)" % ("PASS" if ok_f32 else "FAIL", err_f32))
     print("int8 self-check: %s (decision agreement %.3f, dequant max err %.3f)" %
           ("PASS" if ok_int8 else "FAIL", agree_int8, err_int8))
+    print("\n[+] Generating C Test Vector for main.c...")
 
+    sample_input = npz["ref_inputs"][0]
+    golden_logits = npz["ref_logits"][0]
+    int8_sim_logits = npz["ref_logits_int8sim"][0]
+
+    input_list = sample_input.tolist()
+    c_array = ", ".join([f"{x:.6f}f" for x in input_list])
+
+    print(f"float test_input[40] = {{ {c_array} }};")
+    print(f"// PyTorch Expected F32 Logits:  [{golden_logits[0]:.6f}, {golden_logits[1]:.6f}]")
+    print(f"// PyTorch Expected INT8 Logits: [{int8_sim_logits[0]:.6f}, {int8_sim_logits[1]:.6f}]")
+    print("// -------------------------------\n")
 if __name__ == "__main__":
     main()
