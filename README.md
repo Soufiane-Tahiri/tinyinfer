@@ -60,7 +60,7 @@ To exercise the engine end-to-end, tinyinfer runs a small MLP trained on [NSL-KD
 - **Host validation:** all four inference paths (framework f32, framework int8, kernel f32, kernel int8) pass against PyTorch reference logits within float32 tolerance
 - **Training + export:** `tiny_mlp/nsl-kdd-tinyinfer.ipynb` → `tiny_mlp/tinyinfer_weights.npz` + `tiny_mlp/tinyinfer_meta.json` → `tools/export.py` → `models/model_f32.bin` / `models/model_int8.bin`
 
-**Honest limitation:** NSL-KDD features are windowed traffic/host statistics computed over a connection, not something an ESP32 can extract from raw packets in real time. This demo proves the inference engine — correct output on pre-extracted feature vectors, on-device, in float32 and int8 — not a complete on-device intrusion detection pipeline. Feature extraction from live traffic is the focus of v0.3.
+**Honest limitation:** this demo proves the inference engine — correct output on pre-extracted feature vectors, on-device, in float32 and int8 — not a complete on-device intrusion detection pipeline. NSL-KDD's content features (num_failed_logins, root_shell, logged_in, etc.) come from host-side audit logs in the original dataset, not from packets — they aren't derivable from live traffic on this device. v0.3 targets host-based detection on the ESP32's own traffic, using the basic and traffic-statistics feature groups only (28 of 41), extracted live via lwIP hooks rather than promiscuous 802.11 capture — link-layer encryption makes the latter a non-starter on any network the device doesn't hold keys to.
 
 ---
 
@@ -184,10 +184,18 @@ Int8 dequantization: `float_logit = raw_int32 × requant_scale_final × int8_out
 * [x] UART hardware profiling via `esp_timer_get_time()`
 * [x] Zero dynamic heap allocation (`esp_get_free_heap_size()` verified)
 
-### v0.3 — Live Data Ingestion (In Progress)
+### v0.3 — Host-Based Intrusion Detection (Next)
 
-* [ ] Promiscuous WiFi packet sniffing on ESP32
-* [ ] On-device NSL-KDD feature extraction and connection state tracking
+Model to be retrained/validated on NSL-KDD's reduced basic + traffic-statistics
+feature subset (28/41 features — content features excluded, see Honest
+Limitation above). On-device inference computes the same feature set live via
+lwIP hooks on traffic terminating on the ESP32 node, not via promiscuous
+802.11 capture.
+
+* [ ] Retrain/validate model on 28-feature reduced NSL-KDD subset (host engine, vs PyTorch reference)
+* [ ] lwIP raw-API hooks (`tcp_recv`/`tcp_sent`) for plaintext per-connection byte/packet counts
+* [ ] Fixed-size flow table (static allocation, bounded by measured RAM budget) with defined eviction policy
+* [ ] Trailing-window ring buffer for count/srv_count/*_rate traffic-statistics features
 * [ ] Real-time local scaling (Min-Max/Z-Score) in C
 * [ ] Raspberry Pi numerical validation vs PyTorch (carryover)
 * [ ] Latency benchmark vs TFLite Micro on same model and hardware
